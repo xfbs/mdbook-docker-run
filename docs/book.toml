@@ -5,6 +5,6 @@ multilingual = false
 src = "src"
 title = "mdbook-docker-run book"
 
-[preprocessor.files]
+[preprocessor.docker-run]
 command = "cargo run --"
 prefix = ".."
