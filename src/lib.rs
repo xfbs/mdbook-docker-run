@@ -17,10 +17,20 @@ use pulldown_cmark_to_cmark::cmark;
 use serde::Deserialize;
 use tokio::{runtime::Handle, sync::Semaphore};
 use toml::Value;
+use tracing::{debug, info, instrument};
 use url::Url;
 
+mod docker;
+#[cfg(test)]
+mod tests;
+
+pub use docker::Instance;
+
+const COMMAND_NAME: &'static str = "docker-run";
+const LABEL: &'static str = "docker-run";
+
 /// Configuration for the plugin
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct Config {
     /// URL of Docker socket
     #[serde(default)]
@@ -37,17 +47,6 @@ pub struct Config {
     /// How many commands to run in parallel
     #[serde(default = "num_cpus::get")]
     pub parallel: usize,
-}
-
-/// Instance of a run declaration
-#[derive(Deserialize)]
-pub struct Instance {
-    /// Image to use
-    #[serde(default)]
-    pub image: Option<String>,
-
-    /// Script to run
-    pub script: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -75,7 +74,7 @@ impl Context {
             Some(url) => Docker::connect_with_http(url.as_str(), 60, API_DEFAULT_VERSION)?,
         };
         docker.ping().await?;
-        tracing::info!("Connected to Docker");
+        info!("Connected to Docker");
         Ok(Context {
             tasks: Semaphore::new(config.parallel),
             docker,
@@ -85,12 +84,12 @@ impl Context {
     }
 
     pub fn label(&self) -> &str {
-        "docker-run"
+        LABEL
     }
 
-    #[tracing::instrument(skip(self, book))]
+    #[instrument(skip(self, book))]
     async fn map_book(&self, mut book: Book) -> Result<Book> {
-        tracing::info!("Processing book");
+        info!("Processing book");
         let sections = std::mem::take(&mut book.sections);
         let sections = stream::iter(sections.into_iter())
             .map(|item| self.map_book_item(item))
@@ -102,9 +101,9 @@ impl Context {
         Ok(book)
     }
 
-    #[tracing::instrument(skip(self, item))]
+    #[instrument(skip(self, item))]
     async fn map_book_item(&self, item: BookItem) -> Result<BookItem> {
-        tracing::info!("Processing book item");
+        info!("Processing book item");
         use BookItem::*;
         let item = match item {
             Chapter(chapter) => Chapter(self.map_chapter(chapter).await?),
@@ -114,10 +113,10 @@ impl Context {
         Ok(item)
     }
 
-    #[tracing::instrument(skip(self, chapter), fields(name = chapter.name, path = ?chapter.path))]
+    #[instrument(skip(self, chapter), fields(name = chapter.name, path = ?chapter.path))]
     #[async_recursion(?Send)]
     async fn map_chapter(&self, mut chapter: Chapter) -> Result<Chapter> {
-        tracing::info!("Processing chapter");
+        info!("Processing chapter");
 
         chapter.content = self
             .map_markdown(std::mem::take(&mut chapter.content))
@@ -135,71 +134,69 @@ impl Context {
         Ok(chapter)
     }
 
-    #[tracing::instrument(skip(self, markdown))]
+    #[instrument(skip(self, markdown))]
     async fn map_markdown(&self, markdown: String) -> Result<String> {
-        tracing::info!("Processing markdown");
+        info!("Processing markdown {markdown}");
         let parser = Parser::new_ext(&markdown, Options::all());
 
         // check if this event is a code start event with our label
-        let is_code_start = |event: &Event<'_>| {
-            matches!(event, Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(label))) if &**label == self.label())
-        };
+        let is_code_start = |event: &Event<'_>| matches!(event, Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(label))) if &**label == self.label());
 
         // process code blocks in parallel
         let events: Vec<Event<'_>> = stream::unfold(parser.peekable(), |mut iter| async move {
-                iter.next().map(|event: Event<'_>| {
-                    if is_code_start(&event) {
-                        let code = iter.next();
-                        let end = iter.next();
-                        let future = async move {
-                            if !matches!(end, Some(Event::End(_))) {
-                                return Err(anyhow!("Missing end event, got {end:?}"));
-                            }
-                            match code {
-                                Some(Event::Text(code)) => self.map_code(&code).await,
-                                other => Err(anyhow!("Missing code block, got {other:?}")),
-                            }
+            iter.next().map(|event: Event<'_>| {
+                if is_code_start(&event) {
+                    let code = iter.next();
+                    let end = iter.next();
+                    let future = async move {
+                        if !matches!(end, Some(Event::End(_))) {
+                            return Err(anyhow!("Missing end event, got {end:?}"));
                         }
-                        .boxed();
-                        (future, iter)
-                    } else {
-                        let mut events = vec![event];
-                        while iter.peek().map(|event| !is_code_start(event)).unwrap_or(false) {
-                            events.push(iter.next().unwrap());
+                        match code {
+                            Some(Event::Text(code)) => self.map_code(&code).await,
+                            other => Err(anyhow!("Missing code block, got {other:?}")),
                         }
-                        (future::ready(Ok(events)).boxed(), iter)
                     }
-                })
+                    .boxed();
+                    (future, iter)
+                } else {
+                    let mut events = vec![event];
+                    while iter
+                        .peek()
+                        .map(|event| !is_code_start(event))
+                        .unwrap_or(false)
+                    {
+                        events.push(iter.next().unwrap());
+                    }
+                    (future::ready(Ok(events)).boxed(), iter)
+                }
             })
-            .buffered(self.parallel)
-            .collect::<Vec<_>>()
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flat_map(|events| events.into_iter())
-            .collect();
+        })
+        .buffered(self.parallel)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flat_map(|events| events.into_iter())
+        .collect();
 
         // turn result back into markdown
         let mut buf = String::with_capacity(markdown.len());
         let markdown = cmark(events.iter(), &mut buf).map(|_| buf)?;
+        info!("output {markdown}");
         Ok(markdown)
     }
 
-    #[tracing::instrument(skip(self, code))]
+    #[instrument(skip(self, code))]
     async fn map_code(&self, code: &str) -> Result<Vec<Event<'static>>> {
-        tracing::info!("Mapping code");
+        info!("Mapping code");
         let instance = toml::from_str(code)?;
         let output = self.run(&instance).await?;
-        let events = vec![];
+        info!("Output {output}");
+        let output = format!("<pre><code>{output}</code></pre>");
+        let events = vec![Event::Start(Tag::Paragraph), Event::Html(output.into())];
         Ok(events)
-    }
-
-    #[tracing::instrument(skip(self, instance))]
-    async fn run(&self, instance: &Instance) -> Result<String> {
-        let _lease = self.tasks.acquire().await?;
-        let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
-        Ok(Default::default())
     }
 }
 
@@ -215,10 +212,10 @@ impl DockerRunPreprocessor {
 
 impl Preprocessor for DockerRunPreprocessor {
     fn name(&self) -> &str {
-        "docker-run"
+        COMMAND_NAME
     }
 
-    #[tracing::instrument(name = "mdbook_docker_run", skip(self, ctx, book))]
+    #[instrument(name = "mdbook_docker_run", skip(self, ctx, book))]
     fn run(&self, ctx: &PreprocessorContext, book: Book) -> MdbookResult<Book> {
         let config = ctx.config.get_preprocessor(self.name()).unwrap();
         let config: Config = Value::Table(config.clone()).try_into()?;

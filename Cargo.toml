@@ -9,24 +9,21 @@ repository = "https://github.com/xfbs/mdbook-docker-run"
 readme = "README.md"
 
 [dependencies]
+ansi-to-html = { version = "0.2.1", features = ["lazy-init"] }
 anyhow = "1.0.75"
 async-recursion = "1.0.5"
 bollard = "0.15.0"
 camino = { version = "1.1.6", features = ["serde", "serde1"] }
 clap = { version = "4.4.8", features = ["derive"] }
 futures = "0.3.30"
-ignore = "0.4.21"
-log = "0.4.20"
 mdbook = { version = "0.4.35", default-features = false }
 num_cpus = "1.16.0"
 pulldown-cmark = "0.9.3"
 pulldown-cmark-to-cmark = "11.0.1"
 serde = { version = "1.0.192", features = ["derive"] }
 serde_json = "1.0.108"
-tera = { version = "1.19.1", default-features = false, features = ["builtins"] }
 tokio = { version = "1.36.0", features = ["macros"] }
 toml = "0.5.11"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 url = { version = "2.5.0", features = ["serde"] }
-uuid = { version = "1.6.1", features = ["v4", "serde"] }
