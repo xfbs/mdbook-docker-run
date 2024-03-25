@@ -23,6 +23,7 @@ style:
   stage: test
   image: rust
   script:
+    - rustup component add rustfmt clippy
     - cargo fmt --check
     - cargo clippy -- --deny warnings
 
