@@ -18,7 +18,7 @@ pub enum Command {
     Supports(SupportsCommand),
     /// Process a parsed book (default).
     Process,
-    /// Install support for mdbook-files into the current mdbook project.
+    /// Install support for mdbook-docker-run into the current mdbook project.
     Install(InstallCommand),
 }
 
