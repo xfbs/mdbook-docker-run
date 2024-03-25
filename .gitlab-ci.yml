@@ -1,5 +1,6 @@
 stages:
   - test
+  - build
   - publish
 
 test:
@@ -9,3 +10,32 @@ test:
     - docker:dind
   script:
     - cargo test
+
+build:
+  stage: test
+  image: rust
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/mdbook-docker-run
+
+docs:
+  stage: build
+  image: alpine
+  before_script:
+    - apk add mdbook cargo
+  script:
+    - mdbook build
+  artifacts:
+    paths:
+      - target/book
+
+pages:
+  stage: publish
+  image: alpine
+  script:
+    - mv target/book public
+  artifacts:
+    paths:
+      - public

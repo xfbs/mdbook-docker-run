@@ -70,7 +70,7 @@ impl Context {
     /// Create new [`Context`] from a [`Config`].
     async fn new(config: &Config) -> Result<Self> {
         let docker = match &config.docker {
-            None => Docker::connect_with_local_defaults()?,
+            None => Docker::connect_with_defaults()?,
             Some(url) => Docker::connect_with_http(url.as_str(), 60, API_DEFAULT_VERSION)?,
         };
         docker.ping().await?;
