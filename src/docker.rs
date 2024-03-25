@@ -1,12 +1,12 @@
+use crate::Context;
 use anyhow::{anyhow, Context as _, Result};
-use crate::{Context};
 use docker_api::{
     errors::Error,
     opts::{ContainerCreateOpts, PullOpts},
 };
 use futures::StreamExt;
-use tracing::{debug, info, instrument};
 use serde::Deserialize;
+use tracing::{debug, info, instrument};
 
 /// Instance of a run declaration
 // TODO: network
@@ -36,12 +36,15 @@ impl Context {
         let images = self.docker.images();
 
         let info = images.get(image).inspect().await;
-        if !matches!(info, Err(Error::Fault { code, ref message }) if code == 404 && message.starts_with("No such image"))
-        {
-            debug!("Image is present, skipping pulling");
-            return Ok(());
-        } else {
-            info?;
+        println!("{info:?}");
+        match info {
+            Ok(_) => {
+                debug!("Image is present, skipping pulling");
+                return Ok(());
+            }
+            Err(Error::Fault { code, ref message })
+                if code == 404 && message.starts_with("No such image") => {}
+            Err(other) => return Err(other.into()),
         }
 
         info!("Pulling image {image}");
