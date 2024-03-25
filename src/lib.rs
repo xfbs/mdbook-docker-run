@@ -191,7 +191,7 @@ impl Context {
     #[instrument(skip(self, code))]
     async fn map_code(&self, code: &str) -> Result<Vec<Event<'static>>> {
         info!("Mapping code");
-        let instance = toml::from_str(code)?;
+        let instance = serde_yaml::from_str(code)?;
         let output = self.run(&instance).await?;
         info!("Output {output}");
         let output = format!("<pre><code>{output}</code></pre>");

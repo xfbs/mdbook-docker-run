@@ -1,0 +1,18 @@
+[book]
+authors = ["Patrick Elsen"]
+language = "en"
+multilingual = false
+title = "mdbook-docker-run book"
+src = "docs"
+
+[rust]
+edition = "2021"
+
+[preprocessor.docker-run]
+command = "cargo run --"
+prefix = "."
+
+[build]
+extra-watch-dirs = ["src", "Cargo.toml", "Cargo.lock"]
+build-dir = "target/book"
+create-missing = true
