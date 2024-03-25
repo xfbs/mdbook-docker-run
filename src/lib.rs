@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Result, Context as _};
 use async_recursion::async_recursion;
 use bollard::{Docker, API_DEFAULT_VERSION};
 use camino::Utf8PathBuf;
@@ -70,10 +70,11 @@ impl Context {
     /// Create new [`Context`] from a [`Config`].
     async fn new(config: &Config) -> Result<Self> {
         let docker = match &config.docker {
-            None => Docker::connect_with_defaults()?,
-            Some(url) => Docker::connect_with_http(url.as_str(), 60, API_DEFAULT_VERSION)?,
+            None => Docker::connect_with_defaults().context("Opening Docker with defaults")?,
+            Some(url) => Docker::connect_with_http(url.as_str(), 60, API_DEFAULT_VERSION).context("Opening Docker from URL")?,
         };
-        docker.ping().await?;
+        let docker = docker.negotiate_version().await.context("Negotiating version")?;
+        docker.ping().await.context("Pinging Docker daemon")?;
         info!("Connected to Docker");
         Ok(Context {
             tasks: Semaphore::new(config.parallel),

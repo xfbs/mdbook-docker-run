@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::{Result, Context as _};
 use bollard::{
     container::{AttachContainerOptions, Config, CreateContainerOptions, StartContainerOptions},
     errors::Error,
@@ -30,21 +31,14 @@ pub struct Instance {
 }
 
 impl Context {
-    #[instrument(skip(self, instance))]
-    pub async fn run(&self, instance: &Instance) -> Result<String> {
-        // get semaphore lease to avoid running too many things at once
-        let weight = instance.weight.unwrap_or(1).min(self.parallel as u32);
-        let _lease = self.tasks.acquire_many(weight).await?;
-
-        let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
-
-        // check if image exists, and if not pull it
+    #[instrument(skip(self))]
+    async fn fetch_image(&self, image: &str) -> Result<()> {
         let image_info = self.docker.inspect_image(&image).await;
         let image_missing = matches!(image_info, Err(Error::DockerResponseServerError { status_code, ..}) if status_code == 404);
         if image_missing {
             info!("Pulling image {image}");
             let options = Some(CreateImageOptions {
-                from_image: image.as_str(),
+                from_image: image,
                 ..Default::default()
             });
 
@@ -54,6 +48,20 @@ impl Context {
                 debug!("{event:?}");
             }
         }
+
+        Ok(())
+    }
+
+    #[instrument(skip(self, instance))]
+    pub async fn run(&self, instance: &Instance) -> Result<String> {
+        // get semaphore lease to avoid running too many things at once
+        let weight = instance.weight.unwrap_or(1).min(self.parallel as u32);
+        let _lease = self.tasks.acquire_many(weight).await?;
+
+        let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
+        self.fetch_image(&image).await.context("Fetching docker image")?;
+
+        // check if image exists, and if not pull it
 
         let container_options = CreateContainerOptions {
             name: "",

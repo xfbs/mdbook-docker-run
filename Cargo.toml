@@ -12,7 +12,7 @@ readme = "README.md"
 ansi-to-html = { version = "0.2.1", features = ["lazy-init"] }
 anyhow = "1.0.75"
 async-recursion = "1.0.5"
-bollard = "0.16.1"
+bollard = { version = "0.16.1", features = ["json_data_content"] }
 camino = { version = "1.1.6", features = ["serde", "serde1"] }
 clap = { version = "4.4.8", features = ["derive"] }
 futures = "0.3.30"
