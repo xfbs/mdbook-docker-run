@@ -67,7 +67,7 @@ impl Context {
 
         // check if image exists, and if not pull it
         let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
-        self.fetch_image(&image)
+        self.fetch_image(image)
             .await
             .context("Fetching docker image")?;
 
@@ -90,7 +90,7 @@ impl Context {
         let mut output = Vec::new();
         while let Some(chunk) = stream.next().await {
             debug!("{chunk:?}");
-            output.extend(chunk?.as_slice().into_iter());
+            output.extend(chunk?.as_slice().iter());
         }
 
         let output = String::from_utf8_lossy(&output);

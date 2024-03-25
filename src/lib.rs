@@ -3,7 +3,7 @@
 //! Plugin for mdBook to run commands in Docker containers and display the output.
 
 // we should never print things in this crate, because mdbook parses the output.
-#![cfg_attr(not(test), forbid(print_stdout))]
+#![cfg_attr(not(test), forbid(clippy::print_stdout))]
 
 use anyhow::{anyhow, Context as _, Result};
 use async_recursion::async_recursion;
@@ -33,9 +33,9 @@ mod tests;
 
 pub use docker::Instance;
 
-const COMMAND_NAME: &'static str = "docker-run";
-const LABEL: &'static str = "docker-run";
-const DOCKER_HOST_DEFAULT: &'static str = "unix:///run/docker.sock";
+const COMMAND_NAME: &str = "docker-run";
+const LABEL: &str = "docker-run";
+const DOCKER_HOST_DEFAULT: &str = "unix:///run/docker.sock";
 
 /// Configuration for the plugin
 #[derive(Deserialize, Default)]
@@ -66,10 +66,14 @@ pub struct DockerRunPreprocessor {
 pub struct Context {
     /// Semaphore to limit concurrent tasks
     tasks: Semaphore,
+
     /// How many tasks to run in parallel
     parallel: usize,
+
     /// Handle to Docker
     docker: Docker,
+
+    #[allow(unused)]
     /// Prefix to use for paths
     prefix: Utf8PathBuf,
 }
@@ -79,7 +83,7 @@ impl Context {
     async fn new(config: &Config) -> Result<Self> {
         let docker = match &config.docker {
             None => Docker::new(
-                &std::env::var("DOCKER_HOST")
+                std::env::var("DOCKER_HOST")
                     .as_deref()
                     .unwrap_or(DOCKER_HOST_DEFAULT),
             ),
@@ -116,7 +120,7 @@ impl Context {
 
     #[instrument(skip(self, item))]
     async fn map_book_item(&self, item: BookItem) -> Result<BookItem> {
-        info!("Processing book item");
+        debug!("Processing book item");
         use BookItem::*;
         let item = match item {
             Chapter(chapter) => Chapter(self.map_chapter(chapter).await?),
@@ -129,7 +133,7 @@ impl Context {
     #[instrument(skip(self, chapter), fields(name = chapter.name, path = ?chapter.path))]
     #[async_recursion(?Send)]
     async fn map_chapter(&self, mut chapter: Chapter) -> Result<Chapter> {
-        info!("Processing chapter");
+        debug!("Processing chapter");
 
         chapter.content = self
             .map_markdown(std::mem::take(&mut chapter.content))
@@ -149,7 +153,7 @@ impl Context {
 
     #[instrument(skip(self, markdown))]
     async fn map_markdown(&self, markdown: String) -> Result<String> {
-        info!("Processing markdown {markdown}");
+        debug!("Processing markdown {markdown}");
         let parser = Parser::new_ext(&markdown, Options::all());
 
         // check if this event is a code start event with our label
@@ -203,10 +207,10 @@ impl Context {
 
     #[instrument(skip(self, code))]
     async fn map_code(&self, code: &str) -> Result<Vec<Event<'static>>> {
-        info!("Mapping code");
+        debug!("Mapping code");
         let instance = serde_yaml::from_str(code)?;
         let output = self.run(&instance).await?;
-        info!("Output {output}");
+        debug!("Output {output}");
         let output = format!("<pre><code>{output}</code></pre>");
         let events = vec![Event::Start(Tag::Paragraph), Event::Html(output.into())];
         Ok(events)

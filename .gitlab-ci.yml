@@ -19,6 +19,13 @@ test:
   script:
     - cargo test
 
+style:
+  stage: test
+  image: rust
+  script:
+    - cargo fmt --check
+    - cargo clippy -- --deny warnings
+
 build:
   stage: build
   image: alpine
