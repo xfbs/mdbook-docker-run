@@ -1,12 +1,12 @@
-use super::*;
-use anyhow::{Result, Context as _};
-use bollard::{
-    container::{AttachContainerOptions, Config, CreateContainerOptions, StartContainerOptions},
+use anyhow::{anyhow, Context as _, Result};
+use crate::{Context};
+use docker_api::{
     errors::Error,
-    image::CreateImageOptions,
+    opts::{ContainerCreateOpts, PullOpts},
 };
 use futures::StreamExt;
 use tracing::{debug, info, instrument};
+use serde::Deserialize;
 
 /// Instance of a run declaration
 // TODO: network
@@ -33,20 +33,23 @@ pub struct Instance {
 impl Context {
     #[instrument(skip(self))]
     async fn fetch_image(&self, image: &str) -> Result<()> {
-        let image_info = self.docker.inspect_image(&image).await;
-        let image_missing = matches!(image_info, Err(Error::DockerResponseServerError { status_code, ..}) if status_code == 404);
-        if image_missing {
-            info!("Pulling image {image}");
-            let options = Some(CreateImageOptions {
-                from_image: image,
-                ..Default::default()
-            });
+        let images = self.docker.images();
 
-            let mut image_pull = self.docker.create_image(options, None, None);
-            while let Some(event) = image_pull.next().await {
-                let event = event?;
-                debug!("{event:?}");
-            }
+        let info = images.get(image).inspect().await;
+        if !matches!(info, Err(Error::Fault { code, ref message }) if code == 404 && message.starts_with("No such image"))
+        {
+            debug!("Image is present, skipping pulling");
+            return Ok(());
+        } else {
+            info?;
+        }
+
+        info!("Pulling image {image}");
+        let mut stream = images.pull(&PullOpts::builder().image(image).build());
+
+        while let Some(event) = stream.next().await {
+            let event = event?;
+            debug!("{event:?}");
         }
 
         Ok(())
@@ -58,47 +61,32 @@ impl Context {
         let weight = instance.weight.unwrap_or(1).min(self.parallel as u32);
         let _lease = self.tasks.acquire_many(weight).await?;
 
-        let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
-        self.fetch_image(&image).await.context("Fetching docker image")?;
-
         // check if image exists, and if not pull it
+        let image = instance.image.as_ref().ok_or(anyhow!("Missing image"))?;
+        self.fetch_image(&image)
+            .await
+            .context("Fetching docker image")?;
 
-        let container_options = CreateContainerOptions {
-            name: "",
-            platform: None,
-        };
-
+        let containers = self.docker.containers();
         let command = instance.script.join(" && ");
-        let config = Config {
-            image: Some(image.as_str()),
-            cmd: Some(vec!["sh", "-c", command.as_str()]),
-            ..Default::default()
-        };
-
-        let container = self
-            .docker
-            .create_container(Some(container_options.clone()), config)
+        let container = containers
+            .create(
+                &ContainerCreateOpts::builder()
+                    .attach_stdout(true)
+                    .attach_stderr(true)
+                    .image(image.as_str())
+                    .command(vec!["sh", "-c", command.as_str()])
+                    .build(),
+            )
             .await?;
 
-        let options = Some(AttachContainerOptions::<String> {
-            stdin: Some(true),
-            stdout: Some(true),
-            stderr: Some(true),
-            stream: Some(true),
-            logs: Some(true),
-            detach_keys: None,
-        });
-
-        let mut result = self.docker.attach_container(&container.id, options).await?;
-
-        self.docker
-            .start_container(&container.id, None::<StartContainerOptions<String>>)
-            .await?;
+        let mut stream = container.attach().await?;
+        container.start().await?;
 
         let mut output = Vec::new();
-        while let Some(chunk) = result.output.next().await {
+        while let Some(chunk) = stream.next().await {
             debug!("{chunk:?}");
-            output.extend(chunk?.into_bytes().into_iter());
+            output.extend(chunk?.as_slice().into_iter());
         }
 
         let output = String::from_utf8_lossy(&output);

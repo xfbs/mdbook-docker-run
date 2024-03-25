@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result, Context as _};
+use anyhow::{anyhow, Context as _, Result};
 use async_recursion::async_recursion;
-use bollard::{Docker, API_DEFAULT_VERSION};
 use camino::Utf8PathBuf;
+use docker_api::Docker;
 use futures::{
     future::{self, FutureExt},
     stream::{self, StreamExt, TryStreamExt},
@@ -28,6 +28,7 @@ pub use docker::Instance;
 
 const COMMAND_NAME: &'static str = "docker-run";
 const LABEL: &'static str = "docker-run";
+const DOCKER_HOST_DEFAULT: &'static str = "unix:///run/docker.sock";
 
 /// Configuration for the plugin
 #[derive(Deserialize, Default)]
@@ -70,10 +71,14 @@ impl Context {
     /// Create new [`Context`] from a [`Config`].
     async fn new(config: &Config) -> Result<Self> {
         let docker = match &config.docker {
-            None => Docker::connect_with_defaults().context("Opening Docker with defaults")?,
-            Some(url) => Docker::connect_with_http(url.as_str(), 60, API_DEFAULT_VERSION).context("Opening Docker from URL")?,
+            None => Docker::new(
+                &std::env::var("DOCKER_HOST")
+                    .as_deref()
+                    .unwrap_or(DOCKER_HOST_DEFAULT),
+            ),
+            Some(url) => Docker::new(url.as_str()),
         };
-        let docker = docker.negotiate_version().await.context("Negotiating version")?;
+        let docker = docker.context("Connecting to Docker")?;
         docker.ping().await.context("Pinging Docker daemon")?;
         info!("Connected to Docker");
         Ok(Context {
