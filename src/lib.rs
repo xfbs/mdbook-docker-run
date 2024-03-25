@@ -1,3 +1,10 @@
+//! # mdBook Docker Run
+//!
+//! Plugin for mdBook to run commands in Docker containers and display the output.
+
+// we should never print things in this crate, because mdbook parses the output.
+#![cfg_attr(not(test), forbid(print_stdout))]
+
 use anyhow::{anyhow, Context as _, Result};
 use async_recursion::async_recursion;
 use camino::Utf8PathBuf;

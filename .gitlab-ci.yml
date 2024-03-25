@@ -38,6 +38,7 @@ docs:
   variables:
     DOCKER_HOST: "tcp://docker:2375"
     MDBOOK_PREPROCESSOR__DOCKER_RUN__COMMAND: "target/release/mdbook-docker-run"
+    RUST_LOG: debug
   before_script:
     - apk add mdbook
   script:

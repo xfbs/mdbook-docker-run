@@ -31,12 +31,11 @@ pub struct Instance {
 }
 
 impl Context {
-    #[instrument(skip(self))]
+    #[instrument(skip(self), ret)]
     async fn fetch_image(&self, image: &str) -> Result<()> {
         let images = self.docker.images();
 
         let info = images.get(image).inspect().await;
-        println!("{info:?}");
         match info {
             Ok(_) => {
                 debug!("Image is present, skipping pulling");
@@ -47,8 +46,10 @@ impl Context {
             Err(other) => return Err(other.into()),
         }
 
+        let (image_name, image_tag) = image.split_once(':').unwrap_or((image, "latest"));
+
         info!("Pulling image {image}");
-        let mut stream = images.pull(&PullOpts::builder().image(image).build());
+        let mut stream = images.pull(&PullOpts::builder().image(image_name).tag(image_tag).build());
 
         while let Some(event) = stream.next().await {
             let event = event?;
