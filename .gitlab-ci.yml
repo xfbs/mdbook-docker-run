@@ -12,7 +12,7 @@ test:
     - cargo test
 
 build:
-  stage: test
+  stage: build
   image: rust
   script:
     - cargo build --release
