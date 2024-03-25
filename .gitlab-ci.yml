@@ -52,6 +52,9 @@ pages:
   image: alpine
   script:
     - mv target/book public
+    - mv target/release/mdbook-docker-run public/mdbook-docker-run-amd64
   artifacts:
     paths:
       - public
+  only:
+    - main
