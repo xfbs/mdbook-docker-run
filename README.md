@@ -1,5 +1,6 @@
-# mdbook-docker-run
+# mdBook Docker Run
 
+[![crates.io](https://img.shields.io/crates/v/mdbook-docker-run.svg)](https://crates.io/crates/mdbook-docker-run)
 [![CI Pipelines](https://gitlab.com/xfbs/mdbook-docker-run/badges/main/pipeline.svg)](https://gitlab.com/xfbs/mdbook-docker-run/-/pipelines)
 [![Documentation](https://img.shields.io/badge/docs-nightly-brightgreen)](https://xfbs.gitlab.io/mdbook-docker-run)
 
@@ -30,4 +31,3 @@ hi
 MIT.
 
 [mdbook]: https://rust-lang.github.io/mdBook/
-
