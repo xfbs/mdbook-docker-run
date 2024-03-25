@@ -6,6 +6,7 @@
 stages:
   - test
   - build
+  - docs
   - publish
 
 test:
@@ -20,9 +21,9 @@ test:
 
 build:
   stage: build
-  image: rust
-  variables:
-    DOCKER_HOST: "tcp://docker:2375"
+  image: alpine
+  before_script:
+    - apk add cargo
   script:
     - cargo build --release
   artifacts:
@@ -30,14 +31,15 @@ build:
       - target/release/mdbook-docker-run
 
 docs:
-  stage: build
+  stage: docs
   image: alpine
   services:
     - docker:dind
   variables:
     DOCKER_HOST: "tcp://docker:2375"
+    MDBOOK_PREPROCESSOR__DOCKER_RUN__COMMAND: "target/release/mdbook-docker-run"
   before_script:
-    - apk add mdbook cargo
+    - apk add mdbook
   script:
     - mdbook build
   artifacts:
