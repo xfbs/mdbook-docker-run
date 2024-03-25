@@ -1,8 +1,12 @@
+# GitLab CI configuration
+#
+# This configured GitLab CI to run three jobs: one for unit tests, one to
+# create a release build, and one to build and publish documentation.
+
 stages:
   - test
   - build
   - publish
-
 
 test:
   stage: test
@@ -28,6 +32,8 @@ build:
 docs:
   stage: build
   image: alpine
+  services:
+    - docker:dind
   variables:
     DOCKER_HOST: "tcp://docker:2375"
   before_script:
